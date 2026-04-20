@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_TOKEN=YOUR_TOKEN_HERE HOOKBUS_SOURCE=claude-code /home/YOU/.local/bin/claude-code-gate"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_TOKEN=YOUR_TOKEN_HERE HOOKBUS_SOURCE=claude-code /home/YOU/.local/bin/claude-code-gate"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_TOKEN=YOUR_TOKEN_HERE HOOKBUS_SOURCE=claude-code /home/YOU/.local/bin/claude-code-gate"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_TOKEN=YOUR_TOKEN_HERE HOOKBUS_SOURCE=claude-code /home/YOU/.local/bin/claude-code-gate"
+          }
+        ]
+      }
+    ]
+  }
+}
