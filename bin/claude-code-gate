@@ -43,7 +43,25 @@ __version__ = "0.2.1"
 
 BUS_URL = os.environ.get("HOOKBUS_URL", "http://localhost:18800/event")
 TOKEN = os.environ.get("HOOKBUS_TOKEN", "").strip()
-SOURCE = os.environ.get("HOOKBUS_SOURCE", "claude-code")
+def _detect_source():
+    # Auto-detect the invoking CLI to correctly label events on shared hosts.
+    # Cursor CLI sets CURSOR_INVOKED_AS; if present we were called by cursor,
+    # not by Claude Code, and the bus label must reflect that so dashboards
+    # dont attribute another CLIs activity to claude-code.
+    #
+    # Explicit override via HOOKBUS_SOURCE env always wins (lets users force
+    # a label in test harnesses or exotic setups).
+    override = os.environ.get("HOOKBUS_SOURCE")
+    if override:
+        return override
+    if os.environ.get("CURSOR_INVOKED_AS"):
+        return "cursor-cli"
+    if os.environ.get("AMP_INVOKED_AS"):
+        return "amp"
+    return "claude-code"
+
+
+SOURCE = _detect_source()
 TIMEOUT = int(os.environ.get("HOOKBUS_TIMEOUT", "30"))
 _FAIL_MODE_RAW = os.environ.get("HOOKBUS_FAIL_MODE", "open").strip().lower()
 FAIL_MODE = "closed" if _FAIL_MODE_RAW == "closed" else "open"
