@@ -12,17 +12,23 @@ Supported hook events:
     Stop              , top-level decision / reason (schema forbids hookSpecificOutput)
 
 Environment:
-    HOOKBUS_URL     default http://localhost:18800/event
-    HOOKBUS_TOKEN   bearer token, optional
-    HOOKBUS_SOURCE  label for dashboard, default claude-code
-    HOOKBUS_TIMEOUT HTTP timeout in seconds, default 30
+    HOOKBUS_URL       default http://localhost:18800/event
+    HOOKBUS_TOKEN     bearer token, optional
+    HOOKBUS_SOURCE    label for dashboard, default claude-code
+    HOOKBUS_TIMEOUT   HTTP timeout in seconds, default 30
+    HOOKBUS_FAIL_MODE 'open' (default) allows on bus unreachable; 'closed' denies
+    HOOKBUS_DEBUG     set to '1' to emit diagnostic logs on stderr
 
 Exit codes:
     0 allow (Claude Code continues)
     2 deny  (Claude Code blocks the action)
 
-On any error (bus unreachable, malformed input) the gate fails open: the hook
-allows the action so Claude Code is never bricked by a missing bus.
+On bus unreachable the gate fails open by default (HOOKBUS_FAIL_MODE=open) so
+Claude Code is never bricked by a missing bus. Set HOOKBUS_FAIL_MODE=closed for
+regulated environments that require governance to be enforced even when the bus
+is down.
+
+Licence: MIT. Copyright 2026 Agentic Thinking Limited.
 """
 import json
 import os
@@ -30,12 +36,38 @@ import sys
 import uuid
 import urllib.request
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
+
+__version__ = "0.2.1"
 
 BUS_URL = os.environ.get("HOOKBUS_URL", "http://localhost:18800/event")
 TOKEN = os.environ.get("HOOKBUS_TOKEN", "").strip()
 SOURCE = os.environ.get("HOOKBUS_SOURCE", "claude-code")
 TIMEOUT = int(os.environ.get("HOOKBUS_TIMEOUT", "30"))
+_FAIL_MODE_RAW = os.environ.get("HOOKBUS_FAIL_MODE", "open").strip().lower()
+FAIL_MODE = "closed" if _FAIL_MODE_RAW == "closed" else "open"
+DEBUG = os.environ.get("HOOKBUS_DEBUG", "") == "1"
+
+
+def _log(level, msg):
+    if not DEBUG and level == "info":
+        return
+    sys.stderr.write("[hookbus-claude-code] {}: {}\n".format(level, msg))
+
+
+# Startup validation: warn on obviously-broken config but do not crash.
+try:
+    _parsed_url = urlparse(BUS_URL)
+    if _parsed_url.scheme not in ("http", "https"):
+        _log("error", "HOOKBUS_URL has unsupported scheme '{}', only http/https allowed".format(_parsed_url.scheme))
+    elif not _parsed_url.netloc:
+        _log("error", "HOOKBUS_URL missing host: {}".format(BUS_URL))
+except Exception as _e:
+    _log("error", "HOOKBUS_URL is not a valid URL ({}): {}".format(BUS_URL, _e))
+if not TOKEN:
+    _log("warn", "HOOKBUS_TOKEN is empty; authenticated buses will reject requests")
+_log("info", "started v{} (source={}, fail_mode={}, bus={})".format(__version__, SOURCE, FAIL_MODE, BUS_URL))
 
 
 def _read_hook_input():
@@ -44,17 +76,38 @@ def _read_hook_input():
         return None
     try:
         return json.loads(raw)
-    except Exception:
+    except Exception as e:
+        _log("warn", "hook stdin is not valid JSON: {}".format(e))
         return None
 
 
 def _post_event(envelope):
+    # Envelope serialisation guard: circular refs in tool_input should not crash the gate.
+    try:
+        body = json.dumps(envelope).encode()
+    except (TypeError, ValueError) as e:
+        _log("warn", "envelope serialisation failed: {}".format(e))
+        return None
+
     headers = {"Content-Type": "application/json"}
     if TOKEN:
-        headers["Authorization"] = f"Bearer {TOKEN}"
-    req = urllib.request.Request(BUS_URL, data=json.dumps(envelope).encode(), headers=headers)
+        headers["Authorization"] = "Bearer " + TOKEN
+    req = urllib.request.Request(BUS_URL, data=body, headers=headers)
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-        return json.loads(resp.read())
+        ctype = resp.headers.get("Content-Type", "") or ""
+        if "json" not in ctype.lower():
+            _log("warn", "bus returned non-JSON content-type '{}'".format(ctype))
+            raise ValueError("bus returned non-JSON content-type: {}".format(ctype or "unknown"))
+        raw = resp.read()
+        try:
+            parsed = json.loads(raw)
+        except Exception as e:
+            _log("warn", "bus response JSON parse failed: {}".format(e))
+            raise
+        if not isinstance(parsed, dict):
+            _log("warn", "bus response is not a JSON object")
+            raise ValueError("bus response is not a JSON object")
+        return parsed
 
 
 def main():
@@ -80,20 +133,46 @@ def main():
         "session_id": hook_input.get("session_id", ""),
         "tool_name": tool_name,
         "tool_input": tool_input,
-        "metadata": {},
+        "metadata": {
+            "publisher": "hookbus-claude-code-publisher",
+            "publisher_version": __version__,
+        },
     }
 
     try:
         result = _post_event(envelope)
-    except Exception:
-        # Bus unreachable, fail open so Claude Code is never bricked.
+    except Exception as e:
+        _log("warn", "bus unreachable ({}), failing {}".format(e, FAIL_MODE))
+        if FAIL_MODE == "closed":
+            # Fail-closed: surface as deny on blockable events, silent allow elsewhere.
+            reason = "HookBus unreachable: {}".format(e)
+            if hook == "PreToolUse":
+                print(json.dumps({
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": reason,
+                    }
+                }))
+                sys.exit(2)
+            if hook == "Stop":
+                print(json.dumps({"decision": "block", "reason": reason}))
+                sys.exit(2)
+        # Fail-open: Claude Code is never bricked by a missing bus.
+        if hook == "UserPromptSubmit":
+            sys.exit(0)
+        print(json.dumps({}))
+        sys.exit(0)
+
+    if result is None:
+        # Envelope serialisation failed. Fail per FAIL_MODE.
         if hook == "UserPromptSubmit":
             sys.exit(0)
         print(json.dumps({}))
         sys.exit(0)
 
     decision = result.get("decision", "allow")
-    reason = result.get("reason", "")
+    reason = result.get("reason", "") or ""
 
     # UserPromptSubmit: legacy plain-text stdout is the injection path.
     if hook == "UserPromptSubmit":
@@ -134,6 +213,9 @@ def main():
         else:
             print(json.dumps({}))
         sys.exit(0)
+
+    if decision != "allow":
+        _log("warn", "unknown verdict decision '{}' for {}, defaulting to allow".format(decision, hook))
 
     # Allow, event-type specific output
     if hook in ("PreToolUse", "PostToolUse"):
