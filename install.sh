@@ -39,10 +39,10 @@ hooks if you already have some):
 
 {
   "hooks": {
-    "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN HOOKBUS_SOURCE=claude-code $DST" }] }],
-    "PreToolUse":       [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN HOOKBUS_SOURCE=claude-code $DST" }] }],
-    "PostToolUse":      [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN HOOKBUS_SOURCE=claude-code $DST" }] }],
-    "Stop":             [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN HOOKBUS_SOURCE=claude-code $DST" }] }]
+    "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN $DST" }] }],
+    "PreToolUse":       [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN $DST" }] }],
+    "PostToolUse":      [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN $DST" }] }],
+    "Stop":             [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN $DST" }] }]
   }
 }
 
