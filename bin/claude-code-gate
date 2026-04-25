@@ -128,6 +128,117 @@ def _post_event(envelope):
         return parsed
 
 
+def _read_transcript_with_backoff(path, attempts=(0.1, 0.5, 1.0)):
+    """Read a Claude Code transcript JSONL with poll/backoff.
+
+    Stop hook fires before the transcript is fsynced on busy sessions, so a
+    naive read can miss the final assistant turn. Try up to len(attempts)
+    times, sleeping between, and accept the read once mtime stops changing.
+    Returns the parsed list of JSONL messages or None on failure.
+    """
+    import time
+    if not path or not os.path.isfile(path):
+        return None
+    last_mtime = -1.0
+    for delay in attempts:
+        time.sleep(delay)
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            return None
+        if mtime == last_mtime:
+            break
+        last_mtime = mtime
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            messages = []
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    messages.append(json.loads(line))
+                except Exception:
+                    continue
+            return messages
+    except OSError as e:
+        _log("warn", "transcript read failed ({}): {}".format(path, e))
+        return None
+
+
+def _extract_reasoning_from_transcript(messages):
+    """Walk transcript JSONL backwards, return concatenated thinking blocks
+    from the most recent assistant message.
+
+    Claude Code transcript format: each line is {type, message: {role, content}}
+    where content is a list of blocks. Thinking blocks have {type: "thinking",
+    thinking: "..."}. We scan from the end so we capture only the turn that
+    triggered Stop, not earlier turns in the session.
+    """
+    if not messages:
+        return ""
+    for entry in reversed(messages):
+        msg = entry.get("message") if isinstance(entry, dict) else None
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") != "assistant":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        thinking_parts = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "thinking":
+                t = block.get("thinking")
+                if isinstance(t, str):
+                    thinking_parts.append(t)
+        return "\n".join(thinking_parts)
+    return ""
+
+
+def _emit_reasoning_trace_for_stop(hook_input):
+    """Best-effort: extract thinking blocks from the transcript and post a
+    ReasoningTrace event so EU AI Act auditor subscribers can capture the
+    model's deliberation without walking every PostLLMCall envelope.
+
+    Fire-and-forget. Never raises. Never blocks the main Stop flow.
+    """
+    transcript_path = hook_input.get("transcript_path") or hook_input.get("transcriptPath")
+    if not transcript_path:
+        return
+    try:
+        messages = _read_transcript_with_backoff(transcript_path)
+        reasoning = _extract_reasoning_from_transcript(messages)
+        if not reasoning:
+            return
+        envelope = {
+            "event_id": str(uuid.uuid4()),
+            "event_type": "ReasoningTrace",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source": SOURCE,
+            "session_id": hook_input.get("session_id", ""),
+            "tool_name": "llm.reasoning",
+            "tool_input": {},
+            "metadata": {
+                "publisher": "hookbus-claude-code-publisher",
+                "publisher_version": __version__,
+                "provider": "anthropic",
+                "reasoning_content": reasoning[:16000],
+                "reasoning_chars": len(reasoning),
+                "reasoning_truncated": len(reasoning) > 16000,
+                "transcript_path": transcript_path,
+            },
+        }
+        try:
+            _post_event(envelope)
+        except Exception as e:
+            _log("warn", "ReasoningTrace post failed: {}".format(e))
+    except Exception as e:
+        _log("warn", "reasoning extraction failed: {}".format(e))
+
+
 def main():
     hook_input = _read_hook_input()
     if hook_input is None:
@@ -156,6 +267,12 @@ def main():
             "publisher_version": __version__,
         },
     }
+
+    # Stop hook: best-effort emit of ReasoningTrace alongside the gate call so
+    # the auditor subscriber receives model deliberation for EU AI Act Article
+    # 12 (logging) and Article 14 (oversight). Fire-and-forget, never blocks.
+    if hook == "Stop":
+        _emit_reasoning_trace_for_stop(hook_input)
 
     try:
         result = _post_event(envelope)
