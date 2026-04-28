@@ -80,6 +80,12 @@ If the bus is unreachable, the gate fails **open**: Claude Code continues normal
 | `PostToolUse` | `hookSpecificOutput.additionalContext` (optional) | Observational |
 | `Stop` | `{}` on allow, `{"decision":"block","reason":...}` on deny | Stop schema forbids `hookSpecificOutput` |
 
+## AgentHook publisher manifest
+
+This repository ships [`agenthook.publisher.json`](./agenthook.publisher.json), a draft AgentHook publisher manifest. It declares the stable publisher ID, runtime, supported lifecycle events, limitations, config files, and verification commands in one machine-readable file.
+
+HookBus and other collectors can use the manifest to show publisher onboarding state and hook coverage, but they should still verify live events before reporting a publisher as active.
+
 ## License
 
 MIT. See [`LICENSE`](./LICENSE).
