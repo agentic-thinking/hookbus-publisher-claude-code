@@ -29,7 +29,15 @@ esac
 
 TOKEN="${HOOKBUS_TOKEN:-YOUR_TOKEN_HERE}"
 BUS_URL="${HOOKBUS_URL:-http://localhost:18800/event}"
-HOOK_CMD="env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN HOOKBUS_SOURCE=claude-code $DST"
+PUBLISHER_ID="${HOOKBUS_PUBLISHER_ID:-uk.agenticthinking.publisher.anthropic.claude-code}"
+HOOK_CMD="env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN HOOKBUS_SOURCE=claude-code HOOKBUS_PUBLISHER_ID=$PUBLISHER_ID"
+for name in HOOKBUS_USER_ID HOOKBUS_ACCOUNT_ID HOOKBUS_INSTANCE_ID HOOKBUS_HOST_ID; do
+  value="${!name:-}"
+  if [ -n "$value" ]; then
+    HOOK_CMD="$HOOK_CMD $name=$value"
+  fi
+done
+HOOK_CMD="$HOOK_CMD $DST"
 SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
 CONFIGURE="${HOOKBUS_CONFIGURE_CLAUDE:-1}"
 
