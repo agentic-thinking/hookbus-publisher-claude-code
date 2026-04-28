@@ -66,6 +66,10 @@ TIMEOUT = int(os.environ.get("HOOKBUS_TIMEOUT", "30"))
 _FAIL_MODE_RAW = os.environ.get("HOOKBUS_FAIL_MODE", "open").strip().lower()
 FAIL_MODE = "closed" if _FAIL_MODE_RAW == "closed" else "open"
 DEBUG = os.environ.get("HOOKBUS_DEBUG", "") == "1"
+PUBLISHER_ID = os.environ.get(
+    "HOOKBUS_PUBLISHER_ID",
+    "uk.agenticthinking.publisher.anthropic.claude-code",
+).strip()
 
 
 def _log(level, msg):
@@ -92,6 +96,17 @@ def _read_hook_input():
     raw = sys.stdin.read()
     if not raw.strip():
         return None
+
+
+def _identity_metadata():
+    fields = {
+        "publisher_id": PUBLISHER_ID,
+        "user_id": os.environ.get("HOOKBUS_USER_ID", "").strip(),
+        "account_id": os.environ.get("HOOKBUS_ACCOUNT_ID", "").strip(),
+        "instance_id": os.environ.get("HOOKBUS_INSTANCE_ID", "").strip(),
+        "host_id": os.environ.get("HOOKBUS_HOST_ID", "").strip(),
+    }
+    return {key: value for key, value in fields.items() if value}
     try:
         return json.loads(raw)
     except Exception as e:
@@ -284,6 +299,7 @@ def _emit_stop_trace(hook_input):
                 "publisher": "hookbus-claude-code-publisher",
                 "publisher_version": __version__,
                 "provider": "anthropic",
+                **_identity_metadata(),
                 **trace,
             },
         }
@@ -321,6 +337,7 @@ def main():
         "metadata": {
             "publisher": "hookbus-claude-code-publisher",
             "publisher_version": __version__,
+            **_identity_metadata(),
         },
     }
 
