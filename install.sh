@@ -15,7 +15,40 @@ say()  { printf "\033[1;32m[claude-code-publisher]\033[0m %s\n" "$*"; }
 warn() { printf "\033[1;33m[claude-code-publisher]\033[0m %s\n" "$*"; }
 die()  { printf "\033[1;31m[claude-code-publisher] error:\033[0m %s\n" "$*"; exit 1; }
 
+detect_local_hookbus_endpoints() {
+  python3 <<'PY'
+import http.client
+import json
+
+for port in (18800, 18811):
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=0.8)
+        conn.request(
+            "POST",
+            "/event",
+            body=json.dumps({
+                "event_id": f"installer-probe-{port}",
+                "event_type": "UserPromptSubmit",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "source": "claude-code-installer-probe",
+                "session_id": "installer-probe",
+                "tool_name": "",
+                "tool_input": {},
+                "metadata": {"probe": True},
+            }),
+            headers={"Content-Type": "application/json"},
+        )
+        res = conn.getresponse()
+        res.read()
+        if res.status in (200, 400, 401, 403):
+            print(f"http://localhost:{port}/event {res.status}")
+    except Exception:
+        pass
+PY
+}
+
 [ -f "$SRC" ] || die "Source binary not found at $SRC. Run this from the repo root."
+command -v python3 >/dev/null || die "python3 is required"
 
 mkdir -p "$BIN_DIR"
 install -Dm755 "$SRC" "$DST"
@@ -27,19 +60,41 @@ case ":$PATH:" in
        echo "  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
 esac
 
-TOKEN="${HOOKBUS_TOKEN:-YOUR_TOKEN_HERE}"
 BUS_URL="${HOOKBUS_URL:-http://localhost:18800/event}"
+TOKEN="${HOOKBUS_TOKEN:-}"
+FAIL_MODE="${HOOKBUS_FAIL_MODE:-open}"
 PUBLISHER_ID="${HOOKBUS_PUBLISHER_ID:-uk.agenticthinking.publisher.anthropic.claude-code}"
-HOOK_CMD="env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN HOOKBUS_SOURCE=claude-code HOOKBUS_PUBLISHER_ID=$PUBLISHER_ID"
+
+shell_quote() {
+  printf "%q" "$1"
+}
+
+HOOK_CMD="env HOOKBUS_URL=$(shell_quote "$BUS_URL")"
+if [ -n "$TOKEN" ]; then
+  HOOK_CMD="$HOOK_CMD HOOKBUS_TOKEN=$(shell_quote "$TOKEN")"
+else
+  warn "HOOKBUS_TOKEN is not set. The hook command will omit auth; authenticated buses will reject events."
+fi
+HOOK_CMD="$HOOK_CMD HOOKBUS_SOURCE=claude-code HOOKBUS_FAIL_MODE=$(shell_quote "$FAIL_MODE") HOOKBUS_PUBLISHER_ID=$(shell_quote "$PUBLISHER_ID")"
 for name in HOOKBUS_USER_ID HOOKBUS_ACCOUNT_ID HOOKBUS_INSTANCE_ID HOOKBUS_HOST_ID; do
   value="${!name:-}"
   if [ -n "$value" ]; then
-    HOOK_CMD="$HOOK_CMD $name=$value"
+    HOOK_CMD="$HOOK_CMD $name=$(shell_quote "$value")"
   fi
 done
-HOOK_CMD="$HOOK_CMD $DST"
+HOOK_CMD="$HOOK_CMD $(shell_quote "$DST")"
 SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
 CONFIGURE="${HOOKBUS_CONFIGURE_CLAUDE:-1}"
+
+mapfile -t LOCAL_BUSES < <(detect_local_hookbus_endpoints || true)
+if [ "${#LOCAL_BUSES[@]}" -gt 1 ]; then
+  warn "multiple local HookBus-like endpoints were detected:"
+  for endpoint in "${LOCAL_BUSES[@]}"; do
+    warn "  $endpoint"
+  done
+  warn "this Claude Code publisher is being installed for: $BUS_URL"
+  warn "make sure you open the dashboard for the same bus."
+fi
 
 print_snippet() {
   cat <<EOF
@@ -164,5 +219,12 @@ Or from the Compose install directory:
 
   cd ~/hookbus-light && docker compose exec -T hookbus cat /root/.hookbus/.token
 
-Then restart your Claude Code session so settings.json is reloaded.
+Installed bus:
+  $BUS_URL
+
+Important: fully quit and restart Claude Code. Already-running Claude Code sessions do not reload settings.json.
+
+Run a verification check:
+
+  $DST --doctor
 EOF

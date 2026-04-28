@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_TOKEN=YOUR_TOKEN_HERE HOOKBUS_SOURCE=claude-code /home/YOU/.local/bin/claude-code-gate"
+            "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_SOURCE=claude-code /home/YOU/.local/bin/claude-code-gate"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_TOKEN=YOUR_TOKEN_HERE HOOKBUS_SOURCE=claude-code /home/YOU/.local/bin/claude-code-gate"
+            "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_SOURCE=claude-code /home/YOU/.local/bin/claude-code-gate"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_TOKEN=YOUR_TOKEN_HERE HOOKBUS_SOURCE=claude-code /home/YOU/.local/bin/claude-code-gate"
+            "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_SOURCE=claude-code /home/YOU/.local/bin/claude-code-gate"
           }
         ]
       }
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_TOKEN=YOUR_TOKEN_HERE HOOKBUS_SOURCE=claude-code /home/YOU/.local/bin/claude-code-gate"
+            "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_SOURCE=claude-code /home/YOU/.local/bin/claude-code-gate"
           }
         ]
       }

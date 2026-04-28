@@ -26,11 +26,17 @@ export HOOKBUS_INSTANCE_ID=runtime-instance-01
 ./install.sh
 ```
 
-The installer drops `claude-code-gate` to `~/.local/bin/` and prints a ready-to-paste snippet for `~/.claude/settings.json`.
+The installer drops `claude-code-gate` to `~/.local/bin/`, merges HookBus hooks into `~/.claude/settings.json`, prints the exact bus URL it installed, and warns if multiple local HookBus endpoints are detected. Fully quit and restart Claude Code after installing; already-running sessions do not reload hook settings.
+
+Verify the installation:
+
+```bash
+~/.local/bin/claude-code-gate --doctor
+```
 
 ## Configure
 
-Copy the snippet below into `~/.claude/settings.json`, replacing `<TOKEN>` with your HookBus bearer token:
+If you prefer manual configuration, copy the snippet below into `~/.claude/settings.json`. Add `HOOKBUS_TOKEN=<token>` inline only when your bus requires authentication:
 
 ```jsonc
 {
@@ -39,12 +45,12 @@ Copy the snippet below into `~/.claude/settings.json`, replacing `<TOKEN>` with 
       "matcher": "",
       "hooks": [{
         "type": "command",
-        "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_TOKEN=<TOKEN> HOOKBUS_SOURCE=claude-code /home/you/.local/bin/claude-code-gate"
+        "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_SOURCE=claude-code /home/you/.local/bin/claude-code-gate"
       }]
     }],
-    "PreToolUse":  [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_TOKEN=<TOKEN> HOOKBUS_SOURCE=claude-code /home/you/.local/bin/claude-code-gate" }] }],
-    "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_TOKEN=<TOKEN> HOOKBUS_SOURCE=claude-code /home/you/.local/bin/claude-code-gate" }] }],
-    "Stop":        [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_TOKEN=<TOKEN> HOOKBUS_SOURCE=claude-code /home/you/.local/bin/claude-code-gate" }] }]
+    "PreToolUse":  [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_SOURCE=claude-code /home/you/.local/bin/claude-code-gate" }] }],
+    "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_SOURCE=claude-code /home/you/.local/bin/claude-code-gate" }] }],
+    "Stop":        [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=http://localhost:18800/event HOOKBUS_SOURCE=claude-code /home/you/.local/bin/claude-code-gate" }] }]
   }
 }
 ```
