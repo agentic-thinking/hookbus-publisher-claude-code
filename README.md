@@ -22,6 +22,7 @@ Or manually:
 ```bash
 git clone https://github.com/agentic-thinking/hookbus-publisher-claude-code
 cd hookbus-publisher-claude-code
+export HOOKBUS_INSTANCE_ID=runtime-instance-01
 ./install.sh
 ```
 
@@ -64,8 +65,15 @@ docker exec hookbus cat /root/.hookbus/.token
 | `HOOKBUS_TOKEN` | _(empty)_ | Bearer token for authenticated bus |
 | `HOOKBUS_SOURCE` | `claude-code` | Dashboard source label |
 | `HOOKBUS_TIMEOUT` | `30` | HTTP timeout (seconds) |
+| `HOOKBUS_PUBLISHER_ID` | `uk.agenticthinking.publisher.anthropic.claude-code` | Stable publisher type identifier |
+| `HOOKBUS_USER_ID` | _(empty)_ | Optional user or pseudonymous user reference for shared buses |
+| `HOOKBUS_ACCOUNT_ID` | _(empty)_ | Optional runtime/provider account reference |
+| `HOOKBUS_INSTANCE_ID` | _(empty)_ | Optional local publisher/runtime instance ID |
+| `HOOKBUS_HOST_ID` | _(empty)_ | Optional pseudonymous host, container, or workload ID |
 
 **Do not export `HOOKBUS_SOURCE` in your shell profile.** It leaks into every publisher you run on the same host and mislabels events. Pin it inline per hook command as shown above.
+
+For a central HookBus shared by multiple users or machines, set at least `HOOKBUS_INSTANCE_ID` before installing. Use pseudonymous IDs; do not put raw personal data, passwords, tokens, private IPs, or credentials in identity fields. Pseudonymous IDs are still attributable operational metadata and should follow your retention and access-control policy.
 
 ## Failure behaviour
 
