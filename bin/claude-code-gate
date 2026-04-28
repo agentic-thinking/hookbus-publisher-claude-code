@@ -32,6 +32,7 @@ Licence: MIT. Copyright 2026 Agentic Thinking Limited.
 """
 import json
 import os
+import shlex
 import sys
 import uuid
 import urllib.request
@@ -96,6 +97,11 @@ def _read_hook_input():
     raw = sys.stdin.read()
     if not raw.strip():
         return None
+    try:
+        return json.loads(raw)
+    except Exception as e:
+        _log("warn", "hook stdin is not valid JSON: {}".format(e))
+        return None
 
 
 def _identity_metadata():
@@ -107,15 +113,9 @@ def _identity_metadata():
         "host_id": os.environ.get("HOOKBUS_HOST_ID", "").strip(),
     }
     return {key: value for key, value in fields.items() if value}
-    try:
-        return json.loads(raw)
-    except Exception as e:
-        _log("warn", "hook stdin is not valid JSON: {}".format(e))
-        return None
 
 
-def _post_event(envelope):
-    # Envelope serialisation guard: circular refs in tool_input should not crash the gate.
+def _post_event_to(envelope, bus_url=BUS_URL, token=TOKEN):
     try:
         body = json.dumps(envelope).encode()
     except (TypeError, ValueError) as e:
@@ -123,9 +123,9 @@ def _post_event(envelope):
         return None
 
     headers = {"Content-Type": "application/json"}
-    if TOKEN:
-        headers["Authorization"] = "Bearer " + TOKEN
-    req = urllib.request.Request(BUS_URL, data=body, headers=headers)
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    req = urllib.request.Request(bus_url, data=body, headers=headers)
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
         ctype = resp.headers.get("Content-Type", "") or ""
         if "json" not in ctype.lower():
@@ -141,6 +141,149 @@ def _post_event(envelope):
             _log("warn", "bus response is not a JSON object")
             raise ValueError("bus response is not a JSON object")
         return parsed
+
+
+def _post_event(envelope):
+    return _post_event_to(envelope, BUS_URL, TOKEN)
+
+
+def _read_text(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def _extract_installed_hook_env(settings_text):
+    if not settings_text.strip():
+        return {}
+    try:
+        data = json.loads(settings_text)
+    except Exception:
+        return {}
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    if not isinstance(hooks, dict):
+        return {}
+
+    for entries in hooks.values():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            commands = entry.get("hooks") if isinstance(entry, dict) else None
+            if not isinstance(commands, list):
+                continue
+            for command in commands:
+                text = command.get("command") if isinstance(command, dict) else ""
+                if not isinstance(text, str) or "claude-code-gate" not in text:
+                    continue
+                found = {}
+                try:
+                    parts = shlex.split(text)
+                except ValueError:
+                    parts = text.split()
+                for part in parts:
+                    if "=" not in part:
+                        continue
+                    key, value = part.split("=", 1)
+                    if key in {
+                        "HOOKBUS_URL",
+                        "HOOKBUS_TOKEN",
+                        "HOOKBUS_SOURCE",
+                        "HOOKBUS_FAIL_MODE",
+                        "HOOKBUS_INSTANCE_ID",
+                    }:
+                        found[key] = value
+                return found
+    return {}
+
+
+def _settings_status(settings_text):
+    if not settings_text.strip():
+        return False, "missing or empty settings.json"
+    try:
+        data = json.loads(settings_text)
+    except Exception as exc:
+        return False, "invalid JSON: {}".format(exc)
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    if not isinstance(hooks, dict):
+        return False, "missing hooks root"
+    required = ("UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop")
+    missing = []
+    for event in required:
+        entries = hooks.get(event)
+        ok = False
+        if isinstance(entries, list):
+            for entry in entries:
+                commands = entry.get("hooks") if isinstance(entry, dict) else None
+                if not isinstance(commands, list):
+                    continue
+                if any(
+                    isinstance(command, dict)
+                    and "claude-code-gate" in str(command.get("command", ""))
+                    for command in commands
+                ):
+                    ok = True
+                    break
+        if not ok:
+            missing.append(event)
+    if missing:
+        return False, "missing HookBus handlers for: {}".format(", ".join(missing))
+    return True, "HookBus handlers installed"
+
+
+def _doctor():
+    print("Claude Code HookBus doctor")
+    print("This validates the installed gate, Claude Code settings, and HookBus event path.")
+    print("It cannot prove that an already-running Claude Code session has reloaded settings; restart Claude Code after install.")
+    print()
+
+    ok = True
+    gate_path = os.path.realpath(sys.argv[0])
+    if os.path.exists(gate_path):
+        print("ok claude-code-gate - {}".format(gate_path))
+    else:
+        print("fail claude-code-gate - missing {}".format(gate_path))
+        ok = False
+
+    settings_path = os.environ.get("CLAUDE_SETTINGS", os.path.expanduser("~/.claude/settings.json"))
+    settings_text = _read_text(settings_path)
+    settings_ok, detail = _settings_status(settings_text)
+    print("{} claude settings - {}: {}".format("ok" if settings_ok else "fail", settings_path, detail))
+    ok = ok and settings_ok
+
+    installed_env = _extract_installed_hook_env(settings_text)
+    bus_url = installed_env.get("HOOKBUS_URL", BUS_URL)
+    token = installed_env.get("HOOKBUS_TOKEN", TOKEN)
+    print("ok HOOKBUS_URL - {}".format(bus_url))
+    if not token:
+        print("warn HOOKBUS_TOKEN - empty; authenticated buses will reject events")
+
+    probe = {
+        "event_id": str(uuid.uuid4()),
+        "event_type": "UserPromptSubmit",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": installed_env.get("HOOKBUS_SOURCE", SOURCE),
+        "session_id": "claude-code-doctor",
+        "tool_name": "",
+        "tool_input": {"prompt": "doctor probe"},
+        "metadata": {
+            "publisher": "hookbus-claude-code-publisher",
+            "publisher_version": __version__,
+            "doctor": True,
+        },
+    }
+    try:
+        result = _post_event_to(probe, bus_url, token)
+        decision = result.get("decision", "allow") if isinstance(result, dict) else "allow"
+        print("ok hookbus event - accepted with decision={}".format(decision))
+    except Exception as exc:
+        print("fail hookbus event - {}".format(exc))
+        ok = False
+
+    print()
+    print("Doctor passed." if ok else "Doctor failed.")
+    return 0 if ok else 1
 
 
 def _read_transcript_with_backoff(path, attempts=(0.1, 0.5, 1.0)):
@@ -445,4 +588,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--doctor":
+        sys.exit(_doctor())
     main()
