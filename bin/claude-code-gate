@@ -198,45 +198,101 @@ def _extract_reasoning_from_transcript(messages):
     return ""
 
 
-def _emit_reasoning_trace_for_stop(hook_input):
-    """Best-effort: extract thinking blocks from the transcript and post a
-    ReasoningTrace event so EU AI Act auditor subscribers can capture the
-    model's deliberation without walking every PostLLMCall envelope.
+def _extract_last_assistant_response_from_transcript(messages):
+    """Return the most recent assistant text from the transcript.
+
+    Stop hook input should include last_assistant_message, but transcript
+    fallback gives older Claude Code versions and partial hook payloads a
+    second chance.
+    """
+    if not messages:
+        return ""
+    for entry in reversed(messages):
+        msg = entry.get("message") if isinstance(entry, dict) else None
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            return content
+        if not isinstance(content, list):
+            continue
+        parts = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text" and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        if parts:
+            return "\n".join(parts)
+    return ""
+
+
+def _stop_trace_metadata(hook_input):
+    """Best-effort: extract assistant response and readable thinking blocks
+    from Stop hook input/transcript.
+
+    Claude Code documents `last_assistant_message` on Stop input. Readable
+    `thinking` blocks are not guaranteed; current Claude builds may emit signed
+    or empty thinking markers. We report response reliably when present and
+    reasoning only when exposed as text.
+    """
+    metadata = {}
+    last_message = hook_input.get("last_assistant_message")
+    if isinstance(last_message, str) and last_message:
+        metadata["response_text"] = last_message
+        metadata["response_chars"] = len(last_message)
+
+    transcript_path = hook_input.get("transcript_path") or hook_input.get("transcriptPath")
+    messages = _read_transcript_with_backoff(transcript_path) if transcript_path else None
+
+    if not metadata.get("response_text"):
+        response = _extract_last_assistant_response_from_transcript(messages)
+        if response:
+            metadata["response_text"] = response
+            metadata["response_chars"] = len(response)
+
+    reasoning = _extract_reasoning_from_transcript(messages)
+    if reasoning:
+        metadata["reasoning_content"] = reasoning[:16000]
+        metadata["reasoning_chars"] = len(reasoning)
+        metadata["reasoning_truncated"] = len(reasoning) > 16000
+
+    if transcript_path:
+        metadata["transcript_path"] = transcript_path
+    return metadata
+
+
+def _emit_stop_trace(hook_input):
+    """Best-effort: post a ModelResponse event on Stop with assistant output
+    and any readable reasoning exposed by Claude Code.
 
     Fire-and-forget. Never raises. Never blocks the main Stop flow.
     """
-    transcript_path = hook_input.get("transcript_path") or hook_input.get("transcriptPath")
-    if not transcript_path:
-        return
     try:
-        messages = _read_transcript_with_backoff(transcript_path)
-        reasoning = _extract_reasoning_from_transcript(messages)
-        if not reasoning:
+        trace = _stop_trace_metadata(hook_input)
+        if not trace.get("response_text") and not trace.get("reasoning_content"):
             return
         envelope = {
             "event_id": str(uuid.uuid4()),
-            "event_type": "ReasoningTrace",
+            "event_type": "ModelResponse",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "source": SOURCE,
             "session_id": hook_input.get("session_id", ""),
-            "tool_name": "llm.reasoning",
+            "tool_name": "llm.response",
             "tool_input": {},
             "metadata": {
                 "publisher": "hookbus-claude-code-publisher",
                 "publisher_version": __version__,
                 "provider": "anthropic",
-                "reasoning_content": reasoning[:16000],
-                "reasoning_chars": len(reasoning),
-                "reasoning_truncated": len(reasoning) > 16000,
-                "transcript_path": transcript_path,
+                **trace,
             },
         }
         try:
             _post_event(envelope)
         except Exception as e:
-            _log("warn", "ReasoningTrace post failed: {}".format(e))
+            _log("warn", "ModelResponse post failed: {}".format(e))
     except Exception as e:
-        _log("warn", "reasoning extraction failed: {}".format(e))
+        _log("warn", "stop trace extraction failed: {}".format(e))
 
 
 def main():
@@ -268,11 +324,11 @@ def main():
         },
     }
 
-    # Stop hook: best-effort emit of ReasoningTrace alongside the gate call so
-    # the auditor subscriber receives model deliberation for EU AI Act Article
-    # 12 (logging) and Article 14 (oversight). Fire-and-forget, never blocks.
+    # Stop hook: best-effort emit of ModelResponse alongside the gate call so
+    # subscribers can capture the final assistant output and readable reasoning
+    # where Claude Code exposes it. Fire-and-forget, never blocks.
     if hook == "Stop":
-        _emit_reasoning_trace_for_stop(hook_input)
+        _emit_stop_trace(hook_input)
 
     try:
         result = _post_event(envelope)
