@@ -39,10 +39,10 @@ hooks if you already have some):
 
 {
   "hooks": {
-    "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN $DST" }] }],
-    "PreToolUse":       [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN $DST" }] }],
-    "PostToolUse":      [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN $DST" }] }],
-    "Stop":             [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN $DST" }] }]
+    "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN HOOKBUS_SOURCE=claude-code $DST" }] }],
+    "PreToolUse":       [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN HOOKBUS_SOURCE=claude-code $DST" }] }],
+    "PostToolUse":      [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN HOOKBUS_SOURCE=claude-code $DST" }] }],
+    "Stop":             [{ "matcher": "", "hooks": [{ "type": "command", "command": "env HOOKBUS_URL=$BUS_URL HOOKBUS_TOKEN=$TOKEN HOOKBUS_SOURCE=claude-code $DST" }] }]
   }
 }
 
@@ -50,7 +50,11 @@ hooks if you already have some):
 
 Get the bearer token from the bus container if you haven't already:
 
-  docker exec hookbus cat /root/.hookbus/.token
+  source ~/hookbus-light/.env
+
+Or from the Compose install directory:
+
+  cd ~/hookbus-light && docker compose exec -T hookbus cat /root/.hookbus/.token
 
 Then restart your Claude Code session so settings.json is reloaded.
 EOF
