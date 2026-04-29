@@ -224,7 +224,9 @@ cat <<EOF
 
 Get the bearer token from the bus container if you haven't already:
 
+  set -a
   source ~/hookbus-light/.env
+  set +a
 
 Or from the Compose install directory:
 

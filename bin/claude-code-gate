@@ -37,10 +37,34 @@ import sys
 import uuid
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlparse
 
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
+
+
+def _load_local_hookbus_env():
+    if os.environ.get("HOOKBUS_TOKEN"):
+        return
+    env_path = Path.home() / "hookbus-light" / ".env"
+    if not env_path.exists():
+        return
+    try:
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key.startswith("HOOKBUS_") and key not in os.environ:
+                os.environ[key] = value
+    except Exception:
+        return
+
+
+_load_local_hookbus_env()
 
 BUS_URL = os.environ.get("HOOKBUS_URL", "http://localhost:18800/event")
 TOKEN = os.environ.get("HOOKBUS_TOKEN", "").strip()
