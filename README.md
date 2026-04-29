@@ -17,6 +17,16 @@ Every `UserPromptSubmit`, `PreToolUse`, `PostToolUse` and `Stop` hook Claude Cod
 curl -fsSL https://agenticthinking.uk/install.sh | bash
 ```
 
+If you installed HookBus Light locally first, the publisher installer will auto-load
+`~/hookbus-light/.env`. For manual shell setup:
+
+```bash
+set -a
+source ~/hookbus-light/.env
+set +a
+export HOOKBUS_URL=http://localhost:18800/event
+```
+
 Or manually:
 
 ```bash

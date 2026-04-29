@@ -50,6 +50,17 @@ PY
 [ -f "$SRC" ] || die "Source binary not found at $SRC. Run this from the repo root."
 command -v python3 >/dev/null || die "python3 is required"
 
+load_hookbus_env() {
+  if [[ -z "${HOOKBUS_TOKEN:-}" && -f "$HOME/hookbus-light/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$HOME/hookbus-light/.env"
+    set +a
+  fi
+}
+
+load_hookbus_env
+
 mkdir -p "$BIN_DIR"
 install -Dm755 "$SRC" "$DST"
 say "installed $DST"
